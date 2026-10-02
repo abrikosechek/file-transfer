@@ -1,74 +1,35 @@
 # Transfer Files
 
-Secure shared file-exchange UI at `/file-transfer` on the VPS.
-
-## Features
-
-- Shared password login (httpOnly Secure session cookie)
-- Upload file or folder (preserved as a file tree)
-- Retention: 1 hour / 24 hours (default) / 3 days / 7 days
-- Max upload size: 20 GB (streaming to disk)
-- List, preview, rename, delete, copy share link, download
-- Expired items purged every ~3 minutes
-
-## Env
-
-Copy `.env.example` → `.env` (mode 600). Required:
-
-- `PORT=3060`
-- `BASE_PATH=/file-transfer`
-- `AUTH_PASSWORD`
-- `SESSION_SECRET` (≥32 chars)
-- `DATABASE_URL`
-- `STORAGE_DIR=/var/lib/file-transfer/storage`
-- `MAX_UPLOAD_BYTES=21474836480`
-- `NODE_ENV=production`
-- `TRUST_PROXY=1`
-
-## Run
-
-```bash
-npm ci --omit=dev
-pm2 start server.js --name file-transfer
-pm2 save
-```
-
-## nginx
-
-Place **before** `location /`:
-
-```nginx
-location /file-transfer/ {
-    proxy_pass http://127.0.0.1:3060/file-transfer/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    client_max_body_size 20g;
-    proxy_request_buffering off;
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-    proxy_connect_timeout 60s;
-}
-location = /file-transfer {
-    return 301 /file-transfer/;
-}
-```
-
-Then `nginx -t && systemctl reload nginx`.
+Нужно было часто передавать тяжёлые файлы между устройствами. В мессенджерах это долго, а публичные обменники — нельзя. **Transfer Files** — свой закрытый обмен на VPS: один пароль, загрузки до десятков ГБ, ссылка на файл/папку, срок хранения.
 
 ## Frontend
 
-React + Vite + TypeScript. Source in `src/`, build output in `dist/`.
+- **React + Vite + TypeScript**
+- Слои: `app` → `pages` → `widgets` → `modules` → `shared` (импорты только вниз)
+- Одна страница: вход, список, модалка создания, модалка item (`?id=`)
+- Чанковая загрузка (resume после обрыва, отмена), папки как дерево
+- «Скачать всё» в папку с именем передачи (File System Access + fallback) и опционально один zip **без сжатия** (STORE)
+
+## Backend
+
+- **Node.js / Express** + **PostgreSQL** + файлы на диске
+- Сессия по общему паролю (cookie), API чанков upload/complete/abort, превью и скачивание
+- TTL загрузок, GC незавершённых upload, очистка по расписанию
+- На сервере: PM2 + nginx reverse proxy на path `/file-transfer/`
+
+## Запуск на сервере
+
+Нужны Node.js ≥ 20, PostgreSQL, nginx (по желанию).
 
 ```bash
+# в каталоге проекта
+cp .env.example .env   # заполни значения (секреты только в .env, не в git)
 npm install
-npm run build   # writes dist/
-npm start       # Express serves dist/ under BASE_PATH
+npm run build
+npm start
+# или: pm2 start server.js --name file-transfer && pm2 save
 ```
 
-Layers: `app` → `pages` → `widgets` → `modules` → `shared` (unidirectional imports).
-## Source of truth
+Параметры окружения — только в **`.env.example`** (скопируй в `.env`). В README секреты не перечисляем.
 
-Development source of truth: `/opt/file-transfer` on the VPS.
+Nginx: проксируй на `PORT` из `.env`, для больших загрузок подними `client_max_body_size` и таймауты, `proxy_request_buffering off`.
