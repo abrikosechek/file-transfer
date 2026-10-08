@@ -17,13 +17,12 @@ export function MainPage({ onLogout }: Props) {
 
   const { items, reload } = useItems(handleUnauthorized);
   const [createOpen, setCreateOpen] = useState(false);
-  const [openSlug, setOpenSlug] = useState<string | null>(null);
+  // Read ?id synchronously on mount: ItemModal clears the query when slug is null,
+  // so waiting for the list to load would lose the deep link.
+  const [openSlug, setOpenSlug] = useState<string | null>(() => getQueryId());
 
   useEffect(() => {
-    void reload().then(() => {
-      const id = getQueryId();
-      if (id) setOpenSlug(id);
-    });
+    void reload();
   }, [reload]);
 
   const onUploaded = (item: TransferItem) => {
